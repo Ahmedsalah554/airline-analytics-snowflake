@@ -1027,7 +1027,7 @@ MIT License - See LICENSE file for details
 **Ahmed Salah** | Analytics Engineer | Modern Data Stack
 
 - **GitHub**: [@AhmedSalah554](https://github.com/AhmedSalah554)
-- **LinkedIn**: [Ahmed Salah](https://linkedin.com/in/ahmedsalah554)
+- **LinkedIn**: [Ahmed Salah](https://linkedin.com/in/ahmedsalah2001)
 - **Email**: salahabdelniem@gmail.com
 
 ---
