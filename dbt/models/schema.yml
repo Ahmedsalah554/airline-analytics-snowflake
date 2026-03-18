@@ -1,0 +1,54 @@
+version: 2
+
+models:
+  - name: stg_airlines
+    columns:
+      - name: airline_id
+        tests:
+          - unique
+          - not_null
+
+  - name: stg_airports
+    columns:
+      - name: airport_id
+        tests:
+          - unique
+          - not_null
+
+  - name: stg_routes
+    columns:
+      - name: route_id
+        tests:
+          - unique
+          - not_null
+      - name: origin_airport_id
+        tests:
+          - not_null
+      - name: destination_airport_id
+        tests:
+          - not_null
+
+  - name: fct_daily_flight_offers
+    columns:
+      - name: offer_id
+        tests:
+          - unique
+          - not_null
+      - name: route_id
+        tests:
+          - not_null
+      - name: price_usd
+        tests:
+          - not_null
+
+  - name: airline_performance
+    columns:
+      - name: airline_id
+        tests:
+          - not_null
+
+  - name: route_pricing_analysis
+    columns:
+      - name: route_id
+        tests:
+          - not_null

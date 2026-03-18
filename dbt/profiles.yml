@@ -1,0 +1,57 @@
+airline_analytics:
+  target: dev
+  outputs:
+    # Development environment - Snowflake
+    dev:
+      type: snowflake
+      account: LHHKQJH-IK34611
+      user: SALAH
+      password: Zfhu2YrQ3YjVmwQ
+      database: ANALYTICS_DB
+      schema: STAGING    
+      warehouse: COMPUTE_WH
+      threads: 4
+      client_session_keep_alive: false
+      connect_timeout: 10
+      
+      # Snowflake-specific session parameters
+      session_parameters:
+        WEEK_START: 1
+        QUERY_TAG: "dbt_airline_analytics_dev"
+        TIMEZONE: "UTC"
+      
+    # Production environment - Snowflake
+    prod:
+      type: snowflake
+      account: LHHKQJH-IK34611
+      user: SALAH
+      password: Zfhu2YrQ3YjVmwQ
+      database: ANALYTICS_DB
+      schema: ANALYTICS
+      warehouse: COMPUTE_WH
+      threads: 8
+      client_session_keep_alive: true
+      connect_timeout: 10
+      
+      session_parameters:
+        WEEK_START: 1
+        QUERY_TAG: "dbt_airline_analytics_prod"
+        TIMEZONE: "UTC"
+    
+    # Raw data layer - Snowflake
+    raw:
+      type: snowflake
+      account: LHHKQJH-IK34611
+      user: SALAH
+      password: Zfhu2YrQ3YjVmwQ
+      database: ANALYTICS_DB
+      schema: RAW
+      warehouse: COMPUTE_WH
+      threads: 2
+      client_session_keep_alive: false
+      connect_timeout: 10
+      
+      session_parameters:
+        WEEK_START: 1
+        QUERY_TAG: "dbt_airline_raw_data"
+        TIMEZONE: "UTC"

@@ -1,0 +1,32 @@
+import sys
+import os
+sys.path.insert(0, '/opt/airflow')
+
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from datetime import datetime, timedelta
+from src.api.amadeus_client import AmadeusAPIClient, AmadeusDataFetcher
+
+default_args = {
+    'owner': 'airflow',
+    'retries': 1,
+    'retry_delay': timedelta(minutes=5),
+    'start_date': datetime(2024, 1, 1),
+}
+
+def test_amadeus():
+    client = AmadeusAPIClient()
+    print("✅ Amadeus client initialized")
+    return "Success"
+
+with DAG(
+    'amadeus_pipeline_simple',
+    default_args=default_args,
+    schedule_interval=None,
+    catchup=False,
+) as dag:
+    
+    test_task = PythonOperator(
+        task_id='test_connection',
+        python_callable=test_amadeus
+    )

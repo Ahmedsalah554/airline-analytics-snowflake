@@ -1,0 +1,571 @@
+import sys
+import os
+sys.path.insert(0, "/opt/airflow")
+from datetime import datetime, timedelta
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from airflow.operators.bash import BashOperator
+from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
+from airflow.utils.task_group import TaskGroup
+import json
+import logging
+import sys
+import os
+from pathlib import Path
+import pandas as pd
+
+# Add src to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
+
+from src.api.amadeus_client import AmadeusAPIClient, AmadeusDataFetcher
+
+logger = logging.getLogger(__name__)
+
+# ========================================
+# DAG Configuration
+# ========================================
+
+default_args = {
+    'owner': 'data_engineering_team',
+    'retries': 2,
+    'retry_delay': timedelta(minutes=5),
+    'start_date': datetime(2024, 12, 1),
+    'email_on_failure': False,
+    'email_on_retry': False,
+}
+
+dag = DAG(
+    'airline_snowflake_pipeline',
+    default_args=default_args,
+    description='Airline analytics pipeline - Amadeus API → Snowflake',
+    schedule_interval='0 2 * * *',  # Daily at 2 AM UTC
+    catchup=False,
+    tags=['aviation', 'analytics', 'snowflake', 'amadeus'],
+)
+
+# ========================================
+# Configuration
+# ========================================
+
+ROUTES = [
+    ('NYC', 'LAX'),
+    ('JFK', 'LAS'),
+    ('LAX', 'ORD'),
+    ('MIA', 'BOS'),
+    ('SFO', 'JFK'),
+    ('ATL', 'DEN'),
+]
+
+AIRPORTS = ['JFK', 'LAX', 'ORD', 'DFW', 'DEN', 'SFO', 'LAS', 'MIA', 'BOS', 'ATL']
+AIRLINES = ['UA', 'AA', 'DL', 'SW', 'BA', 'LH', 'AF', 'KL']
+
+SNOWFLAKE_CONN_ID = 'snowflake_amadeus'
+
+# ========================================
+# Task Functions
+# ========================================
+
+def fetch_amadeus_flights(**context):
+    """Fetch flight offers from Amadeus API."""
+    logger.info("🛫 Starting Amadeus flight data fetch...")
+    
+    try:
+        client = AmadeusAPIClient()
+        fetcher = AmadeusDataFetcher(client)
+        
+        all_flights = []
+        
+        for origin, destination in ROUTES:
+            logger.info(f"📍 Fetching flights: {origin} → {destination}")
+            
+            flights = fetcher.fetch_flight_offers(
+                origin=origin,
+                destination=destination,
+                departure_date=(datetime.now() + timedelta(days=7)).date(),
+                adults=1,
+            )
+            
+            if flights:
+                all_flights.extend(flights)
+                logger.info(f"✅ Got {len(flights)} flights for {origin}→{destination}")
+            else:
+                logger.warning(f"⚠️  No flights found for {origin}→{destination}")
+        
+        # Store in XCom for next task
+        context['task_instance'].xcom_push(
+            key='flight_data',
+            value=json.dumps(all_flights)
+        )
+        
+        logger.info(f"✅ Total flights fetched: {len(all_flights)}")
+        return {'status': 'success', 'flights_count': len(all_flights)}
+    
+    except Exception as e:
+        logger.error(f"❌ Error fetching flights: {e}")
+        raise
+
+
+def fetch_amadeus_airports(**context):
+    """Fetch airport information from Amadeus API."""
+    logger.info("✈️  Starting airport data fetch...")
+    
+    try:
+        client = AmadeusAPIClient()
+        fetcher = AmadeusDataFetcher(client)
+        
+        all_airports = []
+        
+        for airport_code in AIRPORTS:
+            logger.info(f"📍 Fetching airport: {airport_code}")
+            
+            airport = fetcher.fetch_airport_info(airport_code)
+            
+            if airport:
+                all_airports.append(airport)
+                logger.info(f"✅ Got info for {airport_code}")
+        
+        context['task_instance'].xcom_push(
+            key='airport_data',
+            value=json.dumps(all_airports)
+        )
+        
+        logger.info(f"✅ Total airports fetched: {len(all_airports)}")
+        return {'status': 'success', 'airports_count': len(all_airports)}
+    
+    except Exception as e:
+        logger.error(f"❌ Error fetching airports: {e}")
+        raise
+
+
+def fetch_amadeus_airlines(**context):
+    """Fetch airline information from Amadeus API."""
+    logger.info("🪑 Starting airline data fetch...")
+    
+    try:
+        client = AmadeusAPIClient()
+        fetcher = AmadeusDataFetcher(client)
+        
+        all_airlines = []
+        
+        for airline_code in AIRLINES:
+            logger.info(f"📍 Fetching airline: {airline_code}")
+            
+            airline = fetcher.fetch_airline_info(airline_code)
+            
+            if airline:
+                all_airlines.append(airline)
+                logger.info(f"✅ Got info for {airline_code}")
+        
+        context['task_instance'].xcom_push(
+            key='airline_data',
+            value=json.dumps(all_airlines)
+        )
+        
+        logger.info(f"✅ Total airlines fetched: {len(all_airlines)}")
+        return {'status': 'success', 'airlines_count': len(all_airlines)}
+    
+    except Exception as e:
+        logger.error(f"❌ Error fetching airlines: {e}")
+        raise
+
+
+def load_to_snowflake(data_key: str, table_name: str, **context):
+    """Load data from XCom to Snowflake."""
+    logger.info(f"📤 Loading {table_name} to Snowflake...")
+    
+    try:
+        ti = context['task_instance']
+        data_json = ti.xcom_pull(key=data_key)
+        
+        if not data_json:
+            logger.warning(f"⚠️  No data found for {table_name}")
+            return {'status': 'no_data'}
+        
+        data = json.loads(data_json)
+        
+        # Create DataFrame
+        df = pd.DataFrame(data if isinstance(data, list) else [data])
+        df['LOADED_AT'] = datetime.now()
+        
+        # Get Snowflake hook
+        hook = SnowflakeHook(snowflake_conn_id=SNOWFLAKE_CONN_ID)
+        
+        # Get engine and write
+        with hook.get_sqlalchemy_engine() as engine:
+            df.to_sql(
+                table_name.lower(),
+                engine,
+                if_exists='append',
+                index=False,
+                method='multi',
+                chunksize=10000,
+            )
+        
+        logger.info(f"✅ Loaded {len(df)} rows to {table_name}")
+        return {'status': 'success', 'rows_loaded': len(df)}
+    
+    except Exception as e:
+        logger.error(f"❌ Error loading to {table_name}: {e}")
+        raise
+
+
+def validate_data_quality(**context):
+    """Perform data quality checks."""
+    logger.info("🔍 Starting data quality validation...")
+    
+    try:
+        hook = SnowflakeHook(snowflake_conn_id=SNOWFLAKE_CONN_ID)
+        
+        checks = {
+            'FLIGHT_OFFERS_RAW': "SELECT COUNT(*) as cnt FROM RAW.FLIGHT_OFFERS_RAW",
+            'AIRPORTS_RAW': "SELECT COUNT(*) as cnt FROM RAW.AIRPORTS_RAW",
+            'AIRLINES_RAW': "SELECT COUNT(*) as cnt FROM RAW.AIRLINES_RAW",
+        }
+        
+        results = {}
+        for table, query in checks.items():
+            result = hook.run(query, autocommit=True)
+            logger.info(f"  {table}: {result}")
+            results[table] = str(result)
+        
+        context['task_instance'].xcom_push(
+            key='quality_checks',
+            value=json.dumps(results)
+        )
+        
+        logger.info("✅ Data quality checks complete")
+        return {'status': 'success', 'checks': results}
+    
+    except Exception as e:
+        logger.error(f"❌ Error in data quality checks: {e}")
+        raise
+
+
+def trigger_dbt_transformations():
+    """Trigger dbt transformations."""
+    logger.info("🔄 Triggering dbt transformations...")
+    
+    try:
+        import subprocess
+        
+        result = subprocess.run(
+            ['dbt', 'run', '--profiles-dir', '/opt/airflow/dbt'],
+            capture_output=True,
+            text=True,
+        )
+        
+        logger.info(f"dbt output:\n{result.stdout}")
+        
+        if result.returncode != 0:
+            logger.error(f"dbt error:\n{result.stderr}")
+            raise Exception(f"dbt run failed: {result.stderr}")
+        
+        logger.info("✅ dbt transformations completed")
+        return {'status': 'success'}
+    
+    except Exception as e:
+        logger.error(f"❌ Error running dbt: {e}")
+        raise
+
+
+# ========================================
+# DAG Tasks
+# ========================================
+
+# Data Ingestion Tasks
+with TaskGroup("data_ingestion", tooltip="Fetch data from Amadeus API") as ingestion_group:
+    fetch_flights = PythonOperator(
+        task_id='fetch_flights',
+        python_callable=fetch_amadeus_flights,
+        provide_context=True,
+    )
+    
+    fetch_airports = PythonOperator(
+        task_id='fetch_airports',
+        python_callable=fetch_amadeus_airports,
+        provide_context=True,
+    )
+    
+    fetch_airlines = PythonOperator(
+        task_id='fetch_airlines',
+        python_callable=fetch_amadeus_airlines,
+        provide_context=True,
+    )
+    
+    [fetch_flights, fetch_airports, fetch_airlines]
+
+# Data Loading Tasks
+with TaskGroup("load_to_snowflake", tooltip="Load data to Snowflake RAW layer") as load_group:
+    load_flights = PythonOperator(
+        task_id='load_flights_snowflake',
+        python_callable=load_to_snowflake,
+        op_kwargs={'data_key': 'flight_data', 'table_name': 'FLIGHT_OFFERS_RAW'},
+        provide_context=True,
+    )
+    
+    load_airports = PythonOperator(
+        task_id='load_airports_snowflake',
+        python_callable=load_to_snowflake,
+        op_kwargs={'data_key': 'airport_data', 'table_name': 'AIRPORTS_RAW'},
+        provide_context=True,
+    )
+    
+    load_airlines = PythonOperator(
+        task_id='load_airlines_snowflake',
+        python_callable=load_to_snowflake,
+        op_kwargs={'data_key': 'airline_data', 'table_name': 'AIRLINES_RAW'},
+        provide_context=True,
+    )
+    
+    [load_flights, load_airports, load_airlines]
+
+# Data Quality Task
+data_quality = PythonOperator(
+    task_id='data_quality_checks',
+    python_callable=validate_data_quality,
+    provide_context=True,
+)
+
+# dbt Transformation Task
+dbt_transform = PythonOperator(
+    task_id='dbt_transformations',
+    python_callable=trigger_dbt_transformations,
+)
+
+# Pipeline Dependencies
+ingestion_group >> load_group >> data_quality >> dbt_transform
+
+POSTGRES_CONN_ID = 'postgres_default'
+
+
+def fetch_flight_offers_task(**context):
+    """
+    Fetch flight offers for specified routes and insert into raw layer.
+    Handles API authentication and data transformation.
+    """
+    try:
+        # Initialize API client
+        client = AmadeusAPIClient()
+        fetcher = AmadeusDataFetcher(client)
+        
+        # Departure date is tomorrow from execution date
+        exec_date = context['execution_date']
+        departure_date = (exec_date + timedelta(days=30)).strftime('%Y-%m-%d')
+        
+        logger.info(f"Fetching flight offers for departure date: {departure_date}")
+        
+        # Fetch offers
+        records = fetcher.fetch_flight_offers_for_routes(
+            routes=ROUTES,
+            departure_date=departure_date
+        )
+        
+        # Insert into PostgreSQL raw layer
+        pg_hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
+        
+        insert_query = """
+            INSERT INTO raw.flight_offers_raw 
+            (ingestion_date, search_date, origin, destination, raw_payload, api_response_timestamp)
+            VALUES (%(ingestion_date)s, %(search_date)s, %(origin)s, %(destination)s, %(raw_payload)s::jsonb, %(api_response_timestamp)s)
+        """
+        
+        for record in records:
+            record['raw_payload'] = json.dumps(record['raw_payload'])
+            pg_hook.run(insert_query, parameters=record)
+        
+        logger.info(f"Inserted {len(records)} flight offer records")
+        context['task_instance'].xcom_push(key='flight_offers_count', value=len(records))
+        
+        return len(records)
+    
+    except Exception as e:
+        logger.error(f"Error fetching flight offers: {e}")
+        raise
+
+
+def fetch_airport_metadata_task(**context):
+    """
+    Fetch airport metadata and insert into raw layer.
+    """
+    try:
+        client = AmadeusAPIClient()
+        fetcher = AmadeusDataFetcher(client)
+        
+        logger.info("Fetching airport metadata")
+        
+        # Fetch airport data
+        records = fetcher.fetch_airport_metadata(AIRPORTS)
+        
+        # Insert into PostgreSQL
+        pg_hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
+        
+        insert_query = """
+            INSERT INTO raw.airports_raw 
+            (ingestion_date, raw_payload)
+            VALUES (%(ingestion_date)s, %(raw_payload)s::jsonb)
+        """
+        
+        for record in records:
+            record['raw_payload'] = json.dumps(record['raw_payload'])
+            pg_hook.run(insert_query, parameters=record)
+        
+        logger.info(f"Inserted {len(records)} airport metadata records")
+        context['task_instance'].xcom_push(key='airports_count', value=len(records))
+        
+        return len(records)
+    
+    except Exception as e:
+        logger.error(f"Error fetching airport metadata: {e}")
+        raise
+
+
+def fetch_airlines_metadata_task(**context):
+    """
+    Fetch airlines master data and insert into raw layer.
+    """
+    try:
+        client = AmadeusAPIClient()
+        fetcher = AmadeusDataFetcher(client)
+        
+        logger.info("Fetching airlines metadata")
+        
+        # Fetch airlines
+        records = fetcher.fetch_airlines_metadata()
+        
+        # Insert into PostgreSQL
+        pg_hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
+        
+        insert_query = """
+            INSERT INTO raw.airlines_raw 
+            (ingestion_date, raw_payload)
+            VALUES (%(ingestion_date)s, %(raw_payload)s::jsonb)
+        """
+        
+        for record in records:
+            record['raw_payload'] = json.dumps(record['raw_payload'])
+            pg_hook.run(insert_query, parameters=record)
+        
+        logger.info(f"Inserted {len(records)} airlines records")
+        context['task_instance'].xcom_push(key='airlines_count', value=len(records))
+        
+        return len(records)
+    
+    except Exception as e:
+        logger.error(f"Error fetching airlines metadata: {e}")
+        raise
+
+
+def data_quality_check_task(**context):
+    """
+    Perform basic data quality checks on ingested data.
+    Validates row counts and data integrity.
+    """
+    try:
+        pg_hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
+        
+        # Check flight offers count
+        flight_offers_count = pg_hook.get_first(
+            "SELECT COUNT(*) as count FROM raw.flight_offers_raw WHERE ingestion_date = CURRENT_DATE"
+        )[0]
+        
+        # Check airports count
+        airports_count = pg_hook.get_first(
+            "SELECT COUNT(*) as count FROM raw.airports_raw WHERE ingestion_date = CURRENT_DATE"
+        )[0]
+        
+        # Check airlines count
+        airlines_count = pg_hook.get_first(
+            "SELECT COUNT(*) as count FROM raw.airlines_raw WHERE ingestion_date = CURRENT_DATE"
+        )[0]
+        
+        logger.info(f"""
+            Data Quality Check Results:
+            - Flight offers: {flight_offers_count}
+            - Airports: {airports_count}
+            - Airlines: {airlines_count}
+        """)
+        
+        # Push results for downstream tasks
+        context['task_instance'].xcom_push(key='dq_flight_offers', value=flight_offers_count)
+        context['task_instance'].xcom_push(key='dq_airports', value=airports_count)
+        context['task_instance'].xcom_push(key='dq_airlines', value=airlines_count)
+        
+        # Basic assertions
+        assert flight_offers_count > 0, "No flight offers were ingested"
+        assert airports_count > 0, "No airports were ingested"
+        assert airlines_count > 0, "No airlines were ingested"
+        
+        return {
+            'flight_offers': flight_offers_count,
+            'airports': airports_count,
+            'airlines': airlines_count,
+            'status': 'PASSED'
+        }
+    
+    except AssertionError as e:
+        logger.error(f"Data quality check failed: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"Error in data quality check: {e}")
+        raise
+
+
+# ============================================================================
+# Task Definitions
+# ============================================================================
+
+# Task 1: Fetch flight offers
+fetch_flights = PythonOperator(
+    task_id='fetch_flight_offers',
+    python_callable=fetch_flight_offers_task,
+    provide_context=True,
+    dag=dag,
+)
+
+# Task 2: Fetch airport metadata
+fetch_airports = PythonOperator(
+    task_id='fetch_airport_metadata',
+    python_callable=fetch_airport_metadata_task,
+    provide_context=True,
+    dag=dag,
+)
+
+# Task 3: Fetch airlines metadata
+fetch_airlines = PythonOperator(
+    task_id='fetch_airlines_metadata',
+    python_callable=fetch_airlines_metadata_task,
+    provide_context=True,
+    dag=dag,
+)
+
+# Task 4: Data quality checks
+data_quality = PythonOperator(
+    task_id='data_quality_checks',
+    python_callable=data_quality_check_task,
+    provide_context=True,
+    dag=dag,
+)
+
+# Task 5: Run dbt transformations (you'll create this in Day 2)
+run_dbt_models = BashOperator(
+    task_id='run_dbt_models',
+    bash_command='cd /opt/airflow/dbt && dbt run --profiles-dir . || true',  # Will implement in Day 2
+    dag=dag,
+)
+
+# Task 6: Run dbt tests
+run_dbt_tests = BashOperator(
+    task_id='run_dbt_tests',
+    bash_command='cd /opt/airflow/dbt && dbt test --profiles-dir . || true',  # Will implement in Day 2
+    dag=dag,
+)
+
+# ============================================================================
+# DAG Dependencies
+# ============================================================================
+
+# Parallel ingestion of all data sources
+[fetch_flights, fetch_airports, fetch_airlines] >> data_quality
+
+# After data quality checks, run transformations
+data_quality >> run_dbt_models >> run_dbt_tests

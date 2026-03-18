@@ -1,0 +1,10 @@
+version: 2
+
+sources:
+  - name: raw
+    database: ANALYTICS_DB
+    schema: RAW
+    tables:
+      - name: real_flights
+        description: الرحلات الفعلية (100K records من Amadeus API + Synthetic)
+        

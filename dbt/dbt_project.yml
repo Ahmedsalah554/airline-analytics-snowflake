@@ -1,0 +1,14 @@
+models:
+  airlines_analysis:
+    staging:
+      +materialized: view
+      +schema: staging
+    silver:
+      +materialized: table
+      +schema: silver
+    gold:
+      +materialized: table
+      +schema: gold
+    core:
+      +materialized: table
+      +schema: staging

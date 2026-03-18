@@ -1,0 +1,106 @@
+# Environment Variables
+.env
+.env.local
+.env.*.local
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.iml
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv
+
+# Airflow
+logs/
+dags/__pycache__/
+plugins/__pycache__/
+*.pid
+airflow.db
+airflow_home/
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+dbt/.user.yml
+
+# Database
+*.sqlite
+*.db
+*.sql~
+postgres_data/
+mysql_data/
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+.docker/
+
+# Data Files
+data/raw/
+data/processed/
+*.csv
+*.parquet
+*.feather
+
+# OS
+.vscode
+.DS_Store
+Thumbs.db
+
+# Sensitive
+*.key
+*.pem
+*.crt
+credentials.json
+secrets.yml
+
+# Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentation
+docs/_build/
+docs/.DS_Store
+
+# Temporary
+*.tmp
+*.temp
+.tmp/
+tmp/
+temp/
