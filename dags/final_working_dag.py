@@ -29,17 +29,17 @@ logger = logging.getLogger(__name__)
 # ========================================
 
 # Snowflake Configuration
-SNOWFLAKE_ACCOUNT = "LHHKQJH-IK34611"
-SNOWFLAKE_USER = "SALAH"
-SNOWFLAKE_PASSWORD = "Zfhu2YrQ3YjVmwQ"
-SNOWFLAKE_WAREHOUSE = "COMPUTE_WH"
-SNOWFLAKE_DATABASE = "ANALYTICS_DB"
-SNOWFLAKE_SCHEMA = "RAW"
+SNOWFLAKE_ACCOUNT = "YOUR_ACC"
+SNOWFLAKE_USER = "YOUR_USER_NAME"
+SNOWFLAKE_PASSWORD = "YOUR_PASSWORD"
+SNOWFLAKE_WAREHOUSE = "YOUR_WAREHOUSE_NAME"
+SNOWFLAKE_DATABASE = "YOUR_DATABASE_NAME"
+SNOWFLAKE_SCHEMA = "YOUR_SCHEMA_NAME"
 
 # OpenSky Network API Configuration
-OPENSKY_USERNAME = "salahabdelniem@gmail.com"
-OPENSKY_PASSWORD = os.getenv('W.r5#hN!.8$w8Dd', '')  # Add this to .env file
-OPENSKY_CLIENT_ID = "salahabdelniem@gmail.com-api-client"
+OPENSKY_USERNAME = "YOUR_E-MAIL"
+OPENSKY_PASSWORD = os.getenv('YOUR_PASS', '')  # Add this to .env file
+OPENSKY_CLIENT_ID = "YOUR_EMAIL-api-client"
 OPENSKY_BASE_URL = "https://opensky-network.org/api"
 
 # Project Targets
