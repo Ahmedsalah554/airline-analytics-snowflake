@@ -4,12 +4,12 @@ airline_analytics:
     # Development environment - Snowflake
     dev:
       type: snowflake
-      account: LHHKQJH-IK34611
-      user: SALAH
-      password: Zfhu2YrQ3YjVmwQ
-      database: ANALYTICS_DB
-      schema: STAGING    
-      warehouse: COMPUTE_WH
+      account: YOUR_ACC
+      user: YOUR_USER
+      password: YOUR_PASSWORD
+      database: YOUR_DATABASE_NAME
+      schema: YOUR_SCHEMA_NAME    
+      warehouse: YOUR_WAREHOUSE_NAME
       threads: 4
       client_session_keep_alive: false
       connect_timeout: 10
@@ -23,13 +23,13 @@ airline_analytics:
     # Production environment - Snowflake
     prod:
       type: snowflake
-      account: LHHKQJH-IK34611
-      user: SALAH
-      password: Zfhu2YrQ3YjVmwQ
-      database: ANALYTICS_DB
-      schema: ANALYTICS
-      warehouse: COMPUTE_WH
-      threads: 8
+      account: YOUR_ACC
+      user: YOUR_USER
+      password: YOUR_PASSWORD
+      database: YOUR_DATABASE_NAME
+      schema: YOUR_SCHEMA_NAME    
+      warehouse: YOUR_WAREHOUSE_NAME
+      threads: 4
       client_session_keep_alive: true
       connect_timeout: 10
       
@@ -41,13 +41,13 @@ airline_analytics:
     # Raw data layer - Snowflake
     raw:
       type: snowflake
-      account: LHHKQJH-IK34611
-      user: SALAH
-      password: Zfhu2YrQ3YjVmwQ
-      database: ANALYTICS_DB
-      schema: RAW
-      warehouse: COMPUTE_WH
-      threads: 2
+      account: YOUR_ACC
+      user: YOUR_USER
+      password: YOUR_PASSWORD
+      database: YOUR_DATABASE_NAME
+      schema: YOUR_SCHEMA_NAME    
+      warehouse: YOUR_WAREHOUSE_NAME
+      threads: 4
       client_session_keep_alive: false
       connect_timeout: 10
       
